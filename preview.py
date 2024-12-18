@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 
-name = ["Llama32-1B-Instruct", "Qwen25-05B-Instruct"]
+name = ["Llama3.2 1B  ", "Qwen2.5 0.5B"]
 mode_path = [
     "E:/pretrained_models/LLM-Research/Llama-3___2-1B-Instruct",
     "E:\pretrained_models\Qwen\Qwen2___5-0___5B-Instruct"]
@@ -31,18 +31,22 @@ def main_work(path):
     
     zh_table = [0] * NUM_LAYERS
     al_table = [0] * NUM_LAYERS
+    entropys = [0] * NUM_LAYERS
     hooks = [] # store hooks
     
     # print(model)
     def CustomHook(modules: nn.Module, inp, out, layer_num):
         with torch.no_grad():
-            x = out[0].detach().clone()
+            x = out[0][:, :-1, :].detach().clone()
             if x.device != model.device:
                 x = x.to(model.device)
 
             x = model.model.norm(x)
-            logits = model.lm_head(x)
+            logits = model.lm_head(x).float()
+            sublogprobs = torch.log_softmax(logits, dim=-1)
+            entropy = -torch.sum(sublogprobs * torch.exp(sublogprobs), dim=-1).mean()
             input_ids = logits.argmax(dim=-1, keepdim=True)
+            entropys[layer_num] += entropy.item()
             
             zh, al, s = 0, 0, ""
             for id in input_ids[0]:
@@ -70,20 +74,25 @@ def main_work(path):
     for hook in hooks:
         hook.remove()
     torch.cuda.empty_cache()
-    return zh_table, al_table
+    return zh_table, al_table, entropys
 
 
 if __name__ == "__main__":
     fig, ax = plt.subplots()
     for i in range(len(mode_path)):
         print(f"Processing {name[i]}")
-        x, y = main_work(mode_path[i])
+        x, y, en = main_work(mode_path[i])
         x_values = np.arange(len(x)) 
         y_values = [x[i] / y[i] for i in range(len(x))]
-        ax.plot(x_values, y_values, label=name[i], marker='o', linestyle='-')
+        max_en = max(en)
+        en_values = [en[i] / max_en for i in range(len(en))]
+        # smooth en_values
+        en_value_smooth = np.cumsum(en_values) / (np.arange(1, len(en_values) + 1))
+        ax.plot(x_values, y_values, label=name[i] + " zh ratio", marker='o', linestyle='-')
+        ax.plot(x_values, en_values, label=name[i] + " entropy", marker='o', linestyle='-')
     ax.grid()
-    ax.set_xlabel("Index")
-    ax.set_ylabel("zh_word / length")
+    ax.set_xlabel("Layer Number")
+    ax.set_ylabel("zh word ratio or entropy")
     ax.legend()
     plt.savefig('./pic/total.png', dpi=500)
     plt.show()
