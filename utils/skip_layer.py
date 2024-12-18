@@ -92,7 +92,7 @@ def choose_layers(config: PretrainedConfig, strategy: Literal["sl-h", "sl-d"] = 
         else: 
             raise NotImplementedError(f"Model has no attribute {NORMF_NAME}")
 
-        for x in hidden_states[1:]:
+        for x in hidden_states[:-1]: # the last hidden state has been activated
             x = x[:, :-1, :]
             logits = model.lm_head(norm(x)).cpu().float()
             logprobs = torch.log_softmax(logits, dim=-1)
@@ -114,7 +114,7 @@ def choose_layers(config: PretrainedConfig, strategy: Literal["sl-h", "sl-d"] = 
                 min_en = min(entropy[l:l + skip_len])
                 if best_en_diff > old_en - min_en:
                     best_en_diff = old_en - min_en
-                    best_l = l
+                    best_l = l - 1
                 l += 1
                 
             if kwargs.get("debug", False):

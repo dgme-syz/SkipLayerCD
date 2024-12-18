@@ -83,17 +83,8 @@ class MgsmEval(Evaluator):
         
         
     def compute(self, model_answer, answer, *args, **kwargs):
-        return (np.array(model_answer) == np.array(answer)).tolist()        
-    
-    def save(self, path: str):
-        # jsonl save
-        with open(path, "w", encoding='utf-8') as f:
-            for i in tqdm(range(len(self.answers))):
-                f.write(json.dumps({
-                    "question": self.questions[i],
-                    "answer": self.answers[i],
-                    "model_answer": self.model_answers[i],
-                    "is_correct": self.is_correct[i]}, ensure_ascii=False) + "\n")
-        return path
+        assert len(model_answer) == len(answer), "The length of model_answer and answer should be the same."
+        return [1 if str(model_answer[i]) == str(answer[i]) else 0 for i in range(len(model_answer))]
+
     
     
