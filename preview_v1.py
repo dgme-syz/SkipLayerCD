@@ -15,6 +15,7 @@ mode_path = [
 data_path = "E:/datasets/mgsm"
 
 
+
 def count_zh(text: str) -> int:
     zh_pattern = re.findall(r'[\u4e00-\u9fff，。？！：；“”‘’（）《》【】]', text)
     return len(zh_pattern)

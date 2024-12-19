@@ -1,4 +1,4 @@
-from transformers import PreTrainedModel, PretrainedConfig, LlamaForCausalLM
+from transformers import PreTrainedModel, PretrainedConfig, Qwen2ForCausalLM
 from transformers.generation import LogitsProcessorList, StoppingCriteriaList, GenerationConfig
 from transformers.generation.streamers import BaseStreamer 
 from transformers.generation.utils import GenerateNonBeamOutput, _relative_top_filter, GenerateDecoderOnlyOutput, GenerateOutput
@@ -174,7 +174,7 @@ def _sl_decoding(
     decoder_hidden_states = () if (return_dict_in_generate and output_hidden_states) else None
     
     # keep track of which sequences are already finished
-    batch_size = input_ids.shape[0]
+    batch_size = input_ids.shape[0] // 2
     unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
     model_kwargs = model._get_initial_cache_position(input_ids, model_kwargs)
     
@@ -196,9 +196,8 @@ def _sl_decoding(
     
     while model._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
         # we should copy input_ids 2 times in batch_size dim
-        input_ids = torch.cat([input_ids, input_ids], dim=0)
         model_inputs = model.prepare_inputs_for_generation(input_ids, **model_kwargs)
-        
+        bsz = input_ids.shape[0] // 2
         # forward pass to get next token
         outputs = model(
             **model_inputs,
@@ -206,12 +205,12 @@ def _sl_decoding(
             output_attentions=output_attentions,
             output_hidden_states=True,
         )
-        input_ids = input_ids[:batch_size]
+        input_ids = input_ids[:bsz]
         
         # extract amateur logits and expert logits
-        final_layer_next_token_logits = outputs.logits[:batch_size, -1, :].detach().clone().float()
-        expert_logits = outputs.logits[:batch_size, -1, :].float()
-        amateu_logits = outputs.logits[batch_size:, -1, :].float()
+        final_layer_next_token_logits = outputs.logits[:bsz, -1, :].detach().clone().float()
+        expert_logits = outputs.logits[:bsz, -1, :].float()
+        amateu_logits = outputs.logits[bsz:, -1, :].float()
         
         # synced_gpus: don't waste resources running the code we don't need; kwargs must be updated before skipping
         model_kwargs = model._update_model_kwargs_for_generation(
@@ -245,12 +244,17 @@ def _sl_decoding(
                     if model.config.is_encoder_decoder
                     else (outputs.hidden_states,)
                 )
-
+        # print(
+        #     f"expert_logits shape: {expert_logits.shape}\n"
+        #     f"next_token_logits shape: {next_token_logits.shape}\n"
+        #     f"next_token shape: {next_token_scores.shape}\n"
+        # )
         if do_sample:  # sample
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
         else:  # argmax
             next_tokens = torch.argmax(next_token_scores, dim=-1)
+        
 
         # finished sentences should have their next token be a padding token
         if has_eos_stopping_criteria:
@@ -263,6 +267,7 @@ def _sl_decoding(
 
         # stop when each sentence is finished
         unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
+        input_ids = torch.cat([input_ids, input_ids], dim=0)
         this_peer_finished = unfinished_sequences.max() == 0
 
     # remove hooks
@@ -300,6 +305,7 @@ def sl_generate(
     prefix_logits: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> Union[GenerateOutput, torch.LongTensor]:
+    inputs = torch.cat([inputs, inputs], dim=0)
     model._validate_model_class()
     tokenizer = kwargs.pop("tokenizer", None)  # Pull this out first, we only use it for stopping criteria
     generation_config, model_kwargs = model._prepare_generation_config(generation_config, **kwargs)
