@@ -2,6 +2,13 @@
 
 这是对于论文 [Multilingual Contrastive Decoding via Language-Agnostic Layers Skipping](https://arxiv.org/abs/2407.10795) 提及的解码方法的复现，官方仓库在[这里](https://github.com/njunlp/skiplayercd)
 
+- `preview_v1.py`: 提供了不通过生成, 只统计给定 token 的 top1 预测的 token 是指定语言的概率
+- `preview_v2.py`: 提供了对于生成文本的每个 token 是指定语言的概率, 并提供了 logits lens 的方法
+
+logits lens: 例如对于 **Llama 3.2 1B** 模型 输入 "What is the capital of China?", 得到:
+![](https://cdn.nlark.com/yuque/0/2024/png/35455670/1734615084051-bf183dcf-f2d2-4039-aef5-55fd05b0611d.png?x-oss-process=image%2Fformat%2Cwebp%2Fresize%2Cw_526%2Climit_0)
+
+
 # OverView
 
 关于这个 **Repo**，我主要尝试将 **skip_layer** 解码方法和[transformers](https://github.com/huggingface/transformers)自带的解码方法集成，Huggingface 已经集成了很多解码方法(可以参考[这里](https://huggingface.co/docs/transformers/main/en/generation_strategies#dola-decoding))，包括本实验需要的 **DoLa** 解码。
